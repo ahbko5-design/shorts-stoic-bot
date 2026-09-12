@@ -25,21 +25,24 @@ PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
 # --- СЦЕНАРИЙ (СТОИЦИЗМ) ---
 def get_script():
     client = genai.Client(api_key=GEMINI_API_KEY)
-    prompt = """
-    Write a 20-second powerful Stoic philosophy lesson or rule (Marcus Aurelius, Seneca, or Epictetus style).
-    Focus on discipline, overcoming hardship, emotional control, and inner strength.
+    selected_topic = random.choice(STOIC_TOPICS)
+    
+    prompt = f"""
+    Write a UNIQUE 20-second powerful Stoic lesson.
+    TOPIC: {selected_topic}.
+    Random seed number: {random.randint(1000, 9999)}
     
     Voiceover guidelines:
-    - Deep, calm, and impactful text.
+    - Deep, impactful, philosophical text.
     - END WITH: "Subscribe to Daily Stoic Mindset for your daily dose of wisdom."
     
-    Return ONLY a JSON object with this exact structure:
-    {
+    Return ONLY a JSON object:
+    {{
       "text": "The full spoken text of the video without markdown or emojis",
-      "query": "single search keyword for stock video like statue or fog or mountain or dark nature",
+      "query": "single search keyword for stock video like statue, dark nature, mountain, fog, rain",
       "title": "Stoic Rule for Hard Times 🏛️ #shorts #stoicism #wisdom",
       "tags": ["Stoicism", "Philosophy", "Wisdom", "Mindset", "Shorts"]
-    }
+    }}
     """
     
     for attempt in range(5):
@@ -48,4 +51,10 @@ def get_script():
                 model='gemini-2.5-flash',
                 contents=prompt
             )
-            clean_json = response.text.replace("```json", "").replace("
+            clean_json = response.text.replace("```json", "").replace("```", "").strip()
+            return json.loads(clean_json)
+        except Exception as e:
+            print(f"⚠️ Попытка {attempt + 1} не удалась ({e}). Ждем 15 секунд...")
+            time.sleep(15)
+            
+    raise Exception("❌ Не удалось получить ответ от Gemini.")
