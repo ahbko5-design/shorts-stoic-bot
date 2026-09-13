@@ -26,58 +26,51 @@ if not os.path.exists('token.json'):
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
 
-STOIC_TOPICS = [
-    "control what you can, ignore the rest", 
-    "embracing hardship and pain", 
-    "the shortness of life (memento mori)", 
-    "staying calm under pressure", 
-    "mastering your emotions", 
-    "disregarding the opinions of others", 
-    "finding peace in solitude", 
-    "daily discipline over motivation"
+DARK_STOIC_TOPICS = [
+    "memento mori and human insignificance",
+    "crying over things you cannot control",
+    "overthinking while the universe does not care",
+    "seeking approval from idiots",
+    "wasting life on social media algorithms",
+    "stressing about money on a floating space rock",
+    "expecting life to be fair",
+    "worrying about opinions of people who will be dead soon"
 ]
 
-# Резервные цитаты на случай исчерпания квоты Gemini (429)
 FALLBACK_SCRIPTS = [
     {
-        "text": "You have power over your mind, not outside events. Realize this, and you will find strength. Subscribe to Daily Stoic Mindset for your daily dose of wisdom.",
-        "image_query": "greek statue dark fog",
-        "title": "Master Your Mind 🏛️ #shorts #stoicism #wisdom #philosophy",
-        "tags": ["Stoicism", "Philosophy", "Wisdom", "Mindset", "Shorts"]
+        "text": "You are stressing about a text message while standing on a giant rock spinning through a void. Marcus Aurelius is laughing at you. Memento mori, human.",
+        "image_query": "marcus aurelius statue dark",
+        "title": "Stoic Reality Check 🏛️💀 #shorts #stoicism #darkhumor #philosophy",
+        "tags": ["Stoicism", "DarkHumor", "Philosophy", "Wisdom", "Shorts"]
     },
     {
-        "text": "We suffer more often in imagination than in reality. Stay grounded in the present. Subscribe to Daily Stoic Mindset for your daily dose of wisdom.",
-        "image_query": "dark mountain solitude landscape",
-        "title": "Overthinking Kills Peace 🏛️ #shorts #stoicism #mindset",
-        "tags": ["Stoicism", "Philosophy", "Wisdom", "Mindset", "Shorts"]
-    },
-    {
-        "text": "Waste no more time arguing about what a good man should be. Be one. Subscribe to Daily Stoic Mindset for your daily dose of wisdom.",
-        "image_query": "marcus aurelius statue rain",
-        "title": "Stop Talking, Start Being 🏛️ #shorts #stoicism #discipline",
-        "tags": ["Stoicism", "Philosophy", "Wisdom", "Mindset", "Shorts"]
+        "text": "Worrying about what people think of you? Good news: they will all be dead soon. Bad news: so will you. Control what you can, ignore the rest.",
+        "image_query": "greek statue fog rain",
+        "title": "Nobody Cares, Memento Mori 🏛️💀 #shorts #stoicism #mindset",
+        "tags": ["Stoicism", "DarkHumor", "Philosophy", "Wisdom", "Shorts"]
     }
 ]
 
 def get_script():
     client = genai.Client(api_key=GEMINI_API_KEY)
-    selected_topic = random.choice(STOIC_TOPICS)
+    selected_topic = random.choice(DARK_STOIC_TOPICS)
     
     prompt = f"""
-    Write a UNIQUE, powerful 20-second Stoic lesson.
+    Write a short, punchy Stoic lesson with heavy DARK HUMOR, cynicism, and brutal honesty (2 sentences max).
     TOPIC: {selected_topic}.
     Random seed number: {random.randint(1000, 9999)}
     
     Voiceover guidelines:
-    - Deep, impactful, philosophical text.
-    - END WITH: "Subscribe to Daily Stoic Mindset for your daily dose of wisdom."
+    - Deep, sarcastic, brutally realistic, philosophical.
+    - END WITH: "Subscribe for your daily dose of brutal Stoic reality."
     
     Return ONLY a JSON object:
     {{
       "text": "The full spoken text of the video without markdown or emojis",
-      "image_query": "single search keyword for stock photo like statue, dark nature, mountain, fog, rain, forest",
-      "title": "Stoic Rule for Hard Times 🏛️ #shorts #stoicism #wisdom",
-      "tags": ["Stoicism", "Philosophy", "Wisdom", "Mindset", "Shorts"]
+      "image_query": "statue OR dark mountain OR rain forest OR fog landscape OR skull statue",
+      "title": "Dark Stoic Wisdom 🏛️💀 #shorts #stoicism #darkhumor #philosophy",
+      "tags": ["Stoicism", "DarkHumor", "Philosophy", "Wisdom", "Shorts"]
     }}
     """
     
@@ -98,22 +91,31 @@ def get_script():
             print(f"⚠️ Ошибка Gemini (429/Квота). Попытка {attempt + 1}/5. Ждём {wait_time} сек...")
             time.sleep(wait_time)
             
-    print("⚠️ Квота Gemini исчерпана. Используем резервную стоическую мудрость...")
+    print("⚠️ Квота Gemini исчерпана. Берем резервный черный стоический мем...")
     return random.choice(FALLBACK_SCRIPTS)
 
 async def create_audio(text):
-    # Глубокий мужской баритон для философичности
-    communicate = edge_tts.Communicate(text, "en-US-ChristopherNeural")
+    # Глубокий саркастичный мужской голос
+    communicate = edge_tts.Communicate(text, "en-US-ChristopherNeural", rate="-5%", pitch="-3Hz")
     await communicate.save("audio.mp3")
 
 def download_pexels_image(query):
     headers = {"Authorization": PEXELS_API_KEY}
-    url = f"https://api.pexels.com/v1/search?query={query}&per_page=15&orientation=portrait"
-    res = requests.get(url, headers=headers).json()
+    random_page = random.randint(1, 10)
+    url = f"https://api.pexels.com/v1/search?query={query}&per_page=15&page={random_page}&orientation=portrait"
     
-    photos = res.get("photos", [])
+    try:
+        res = requests.get(url, headers=headers).json()
+        photos = res.get("photos", [])
+    except Exception:
+        photos = []
+
     if not photos:
-        res = requests.get("https://api.pexels.com/v1/search?query=statue&per_page=10&orientation=portrait", headers=headers).json()
+        backup_queries = ["statue", "dark nature", "mountain fog", "ancient ruins", "rain dark"]
+        fallback_q = random.choice(backup_queries)
+        random_page = random.randint(1, 8)
+        url = f"https://api.pexels.com/v1/search?query={fallback_q}&per_page=15&page={random_page}&orientation=portrait"
+        res = requests.get(url, headers=headers).json()
         photos = res.get("photos", [])
 
     selected = random.choice(photos)
@@ -121,14 +123,14 @@ def download_pexels_image(query):
     
     with open("stoic_bg.jpg", "wb") as f:
         f.write(requests.get(image_url).content)
-    print("📸 Атмосферный фон стоицизма скачан!")
+    print("📸 Атмосферный фоновый визуал скачан!")
 
 def build_video(script_text):
     audio = AudioFileClip("audio.mp3")
     duration = audio.duration
     target_w, target_h = 1080, 1920
 
-    # 1. Пропорциональный Crop-to-Fill в PIL (без растяжения пропорций)
+    # Пропорциональный Crop-to-Fill в PIL (заполняем 9:16 без растяжения)
     img = Image.open("stoic_bg.jpg").convert("RGB")
     orig_w, orig_h = img.size
 
@@ -140,10 +142,10 @@ def build_video(script_text):
     top = (new_h - target_h) // 2
     bg_canvas = img_resized.crop((left, top, left + target_w, top + target_h))
 
-    # 2. Отрисовка текста белым с черной обводкой по центру
+    # Наложение текста прямо на картинку через PIL
     draw = ImageDraw.Draw(bg_canvas)
     try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 52)
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 54)
     except:
         font = ImageFont.load_default()
 
@@ -156,8 +158,8 @@ def build_video(script_text):
         w = bbox[2] - bbox[0]
         x = (target_w - w) / 2
 
-        # Черный контрастный контур
-        for adj in [(-3,0), (3,0), (0,-3), (0,3), (-3,-3), (3,3), (-3,3), (3,-3)]:
+        # Чёрная контрастная обводка
+        for adj in [(-4,0), (4,0), (0,-4), (0,4), (-4,-4), (4,4), (-4,4), (4,-4)]:
             draw.text((x + adj[0], y_text + adj[1]), line, font=font, fill="black")
 
         # Белый философский текст
@@ -166,9 +168,9 @@ def build_video(script_text):
 
     bg_canvas.save("final_frame.jpg")
 
-    # 3. Анимация плавного Zoom-In и сведение
+    # Анимация Zoom-In и сборка
     img_clip = ImageClip("final_frame.jpg").set_duration(duration)
-    img_animated = img_clip.resize(lambda t: 1 + 0.04 * t).set_position(('center', 'center'))
+    img_animated = img_clip.resize(lambda t: 1 + 0.03 * t).set_position(('center', 'center'))
 
     final_clip = CompositeVideoClip([img_animated], size=(target_w, target_h))
     final_clip = final_clip.set_audio(audio)
@@ -184,9 +186,9 @@ def upload_to_youtube(metadata):
 
     description_text = (
         f"{metadata['text']}\n\n"
-        f"🏛️ Daily Stoic wisdom to keep you disciplined.\n"
-        f"🔔 Subscribe to Daily Stoic Mindset for more daily philosophy!\n\n"
-        f"#shorts #stoicism #philosophy #mindset #wisdom"
+        f"🏛️ Brutal Stoic wisdom & dark humor for modern humans.\n"
+        f"🔔 Subscribe for your daily dose of Stoic reality!\n\n"
+        f"#shorts #stoicism #darkhumor #philosophy #wisdom"
     )
 
     body = {
@@ -202,16 +204,16 @@ def upload_to_youtube(metadata):
     media = MediaFileUpload("final_short.mp4", mimetype="video/mp4", resumable=False)
     request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
     response = request.execute()
-    print(f"✅ СТОИЧЕСКИЙ РОЛИК ОПУБЛИКОВАН! ID: {response.get('id')}")
+    print(f"✅ ЧЕРНЫЙ СТОИЧЕСКИЙ РОЛИК ОПУБЛИКОВАН! ID: {response.get('id')}")
 
 if __name__ == "__main__":
-    print("1. Генерируем стоический сценарий...")
+    print("1. Генерируем циничный стоический мем...")
     data = get_script()
     print("2. Озвучиваем глубоким голосом...")
     asyncio.run(create_audio(data['text']))
-    print("3. Ищем атмосферную картинку...")
+    print("3. Скачиваем атмосферный случайный визуал с Pexels...")
     download_pexels_image(data['image_query'])
-    print("4. Собираем 9:16 видео с текстом и Zoom-эффектом...")
+    print("4. Собираем 9:16 видео с субтитрами...")
     build_video(data['text'])
     print("5. Загружаем на YouTube...")
     upload_to_youtube(data)
