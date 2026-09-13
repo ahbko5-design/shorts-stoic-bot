@@ -14,6 +14,10 @@ import google_auth_oauthlib.flow
 import googleapiclient.discovery
 from googleapiclient.http import MediaFileUpload
 
+# Совместимость Pillow 10+ со старыми вызовами MoviePy
+if not hasattr(Image, 'ANTIALIAS'):
+    Image.ANTIALIAS = Image.Resampling.LANCZOS
+
 # Восстановление секретов
 if not os.path.exists('client_secret.json'):
     with open('client_secret.json', 'w') as f:
@@ -95,7 +99,6 @@ def get_script():
     return random.choice(FALLBACK_SCRIPTS)
 
 async def create_audio(text):
-    # Глубокий саркастичный мужской голос
     communicate = edge_tts.Communicate(text, "en-US-ChristopherNeural", rate="-5%", pitch="-3Hz")
     await communicate.save("audio.mp3")
 
@@ -168,11 +171,10 @@ def build_video(script_text):
 
     bg_canvas.save("final_frame.jpg")
 
-    # Анимация Zoom-In и сборка
+    # Сборка статичного видео без вызова устаревшего ресайза MoviePy
     img_clip = ImageClip("final_frame.jpg").set_duration(duration)
-    img_animated = img_clip.resize(lambda t: 1 + 0.03 * t).set_position(('center', 'center'))
 
-    final_clip = CompositeVideoClip([img_animated], size=(target_w, target_h))
+    final_clip = CompositeVideoClip([img_clip], size=(target_w, target_h))
     final_clip = final_clip.set_audio(audio)
     
     final_clip.write_videofile("final_short.mp4", fps=24, codec="libx264", audio_codec="aac")
