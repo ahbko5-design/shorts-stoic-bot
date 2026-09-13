@@ -1,5 +1,4 @@
 from PIL import Image
-# Принудительный патч Pillow 10+ ДО импорта MoviePy
 if not hasattr(Image, 'ANTIALIAS'):
     Image.ANTIALIAS = Image.Resampling.LANCZOS
 
@@ -15,8 +14,8 @@ import numpy as np
 from google import genai
 import edge_tts
 from PIL import ImageDraw, ImageFont
-from moviepy.editor import ImageClip, AudioFileClip, VideoClip, CompositeVideoClip
-import google_auth_oauthlib.flow
+from moviepy.editor import VideoFileClip, AudioFileClip, VideoClip, CompositeVideoClip, CompositeAudioClip
+from moviepy.audio.fx.all import volumex
 import googleapiclient.discovery
 from googleapiclient.http import MediaFileUpload
 
@@ -32,6 +31,13 @@ if not os.path.exists('token.json'):
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
 
+# Атмосферные фоновые треки (Royalty-Free)
+DARK_STOIC_BGM = [
+    "https://cdn.pixabay.com/download/audio/2022/10/25/audio_88c4d6fdf5.mp3", # Dark ambient
+    "https://cdn.pixabay.com/download/audio/2022/03/15/audio_c8c8a73467.mp3", # Mysterious mood
+    "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3"  # Deep cinematic
+]
+
 DARK_STOIC_TOPICS = [
     "memento mori and human insignificance",
     "crying over things you cannot control",
@@ -46,13 +52,13 @@ DARK_STOIC_TOPICS = [
 FALLBACK_SCRIPTS = [
     {
         "text": "You are stressing about a text message while standing on a giant rock spinning through a void. Marcus Aurelius is laughing at you. Memento mori.",
-        "image_query": "marcus aurelius statue dark",
+        "video_query": "dark mountain fog rain",
         "title": "Stoic Reality Check 🏛️💀 #shorts #stoicism #darkhumor #philosophy",
         "tags": ["Stoicism", "DarkHumor", "Philosophy", "Wisdom", "Shorts"]
     },
     {
         "text": "Worrying about what people think of you? Good news: they will all be dead soon. Bad news: so will you. Control what you can, ignore the rest.",
-        "image_query": "greek statue fog rain",
+        "video_query": "statue rain dramatic dark",
         "title": "Nobody Cares, Memento Mori 🏛️💀 #shorts #stoicism #mindset",
         "tags": ["Stoicism", "DarkHumor", "Philosophy", "Wisdom", "Shorts"]
     }
@@ -69,12 +75,12 @@ def get_script():
     
     Voiceover guidelines:
     - Deep, sarcastic, brutally realistic, philosophical.
-    - DO NOT include any calls to action, sub requests, or subscribe prompts. End with a strong punchline.
+    - DO NOT include any calls to action or subscribe prompts. End with a strong punchline.
     
     Return ONLY a JSON object:
     {{
       "text": "The full spoken text of the video without markdown or emojis",
-      "image_query": "statue OR dark mountain OR rain forest OR fog landscape OR skull statue",
+      "video_query": "dark forest OR stormy ocean OR ancient statue OR foggy mountain OR rain window OR dark smoke",
       "title": "Dark Stoic Wisdom 🏛️💀 #shorts #stoicism #darkhumor #philosophy",
       "tags": ["Stoicism", "DarkHumor", "Philosophy", "Wisdom", "Shorts"]
     }}
@@ -97,64 +103,81 @@ def get_script():
             print(f"⚠️ Ошибка Gemini (429/Квота). Попытка {attempt + 1}/5. Ждём {wait_time} сек...")
             time.sleep(wait_time)
             
-    print("⚠️ Квота Gemini исчерпана. Берем резервный черный стоический мем...")
+    print("⚠️ Квота Gemini исчерпана. Берем резервный сценарий...")
     return random.choice(FALLBACK_SCRIPTS)
 
 async def create_audio(text):
     communicate = edge_tts.Communicate(text, "en-US-ChristopherNeural", rate="-5%", pitch="-3Hz")
-    await communicate.save("audio.mp3")
+    await communicate.save("voice.mp3")
 
-def download_pexels_image(query):
+def download_bgm():
+    bgm_url = random.choice(DARK_STOIC_BGM)
+    try:
+        res = requests.get(bgm_url, timeout=10)
+        with open("bgm.mp3", "wb") as f:
+            f.write(res.content)
+        print("🎵 Фоновая музыка успешно скачана!")
+    except Exception as e:
+        print(f"⚠️ Не удалось скачать музыку: {e}")
+
+def download_pexels_video(query):
+    """ Поиск и скачивание случайного фонового видео по теме с Pexels """
     headers = {"Authorization": PEXELS_API_KEY}
-    random_page = random.randint(1, 10)
-    url = f"https://api.pexels.com/v1/search?query={query}&per_page=15&page={random_page}&orientation=portrait"
+    random_page = random.randint(1, 8)
+    url = f"https://api.pexels.com/videos/search?query={query}&per_page=12&page={random_page}&orientation=portrait"
     
     try:
         res = requests.get(url, headers=headers).json()
-        photos = res.get("photos", [])
+        videos = res.get("videos", [])
     except Exception:
-        photos = []
+        videos = []
 
-    if not photos:
-        backup_queries = ["statue", "dark nature", "mountain fog", "ancient ruins", "rain dark"]
+    if not videos:
+        backup_queries = ["dark nature fog", "dramatic rain", "statue dark", "ancient ruins", "ocean storm"]
         fallback_q = random.choice(backup_queries)
-        random_page = random.randint(1, 8)
-        url = f"https://api.pexels.com/v1/search?query={fallback_q}&per_page=15&page={random_page}&orientation=portrait"
+        url = f"https://api.pexels.com/videos/search?query={fallback_q}&per_page=12&page=1&orientation=portrait"
         res = requests.get(url, headers=headers).json()
-        photos = res.get("photos", [])
+        videos = res.get("videos", [])
 
-    selected = random.choice(photos)
-    image_url = selected["src"]["large2x"]
+    selected_video = random.choice(videos)
+    video_files = selected_video.get("video_files", [])
     
-    with open("stoic_bg.jpg", "wb") as f:
-        f.write(requests.get(image_url).content)
-    print("📸 Фоновое изображение скачано!")
+    # Подбираем лучшее вертикальное видео по разрешению
+    hd_file = next((f for f in video_files if f.get("width") == 1080 and f.get("height") == 1920), None)
+    if not hd_file:
+        hd_file = max(video_files, key=lambda x: x.get("width", 0))
 
-def prepare_vertical_background():
-    target_w, target_h = 1080, 1920
-    img = Image.open("stoic_bg.jpg").convert("RGB")
-    orig_w, orig_h = img.size
-
-    scale = max(target_w / orig_w, target_h / orig_h)
-    new_w, new_h = int(orig_w * scale), int(orig_h * scale)
-    img_resized = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-
-    left = (new_w - target_w) // 2
-    top = (new_h - target_h) // 2
-    cropped_img = img_resized.crop((left, top, left + target_w, top + target_h))
-    cropped_img.save("clean_bg.jpg")
+    video_url = hd_file["link"]
+    with open("stoic_bg.mp4", "wb") as f:
+        f.write(requests.get(video_url).content)
+    print("🎬 Фоновое видео скачано!")
 
 def build_video(script_text):
-    audio = AudioFileClip("audio.mp3")
-    total_duration = audio.duration
+    voice_audio = AudioFileClip("voice.mp3")
+    total_duration = voice_audio.duration
     target_w, target_h = 1080, 1920
 
-    prepare_vertical_background()
+    # Обработка видео: обрезка по длине голоса и кадрирование под 9:16
+    raw_video = VideoFileClip("stoic_bg.mp4").without_audio()
+    if raw_video.duration < total_duration:
+        # Если видео короче речи — зацикливаем
+        raw_video = raw_video.loop(duration=total_duration)
+    else:
+        # Берём случайный отрезок из видео
+        max_start = max(0, raw_video.duration - total_duration)
+        start_t = random.uniform(0, max_start)
+        raw_video = raw_video.subclip(start_t, start_t + total_duration)
 
-    # 1. Фоновый статичный клип (без ресейза MoviePy)
-    bg_clip = ImageClip("clean_bg.jpg").set_duration(total_duration)
+    # Приводим к 1080x1920 без искажения пропорций
+    vw, vh = raw_video.size
+    scale = max(target_w / vw, target_h / vh)
+    new_w, new_h = int(vw * scale), int(vh * scale)
+    
+    bg_video = raw_video.resize((new_w, new_h)).crop(
+        x_center=new_w // 2, y_center=new_h // 2, width=target_w, height=target_h
+    )
 
-    # 2. Бегущие субтитры (порциями по 3-4 слова)
+    # Генерация бегущих субтитров (порциями по 3-4 слова)
     words = script_text.split()
     chunks = []
     current_chunk = []
@@ -188,6 +211,7 @@ def build_video(script_text):
             w = bbox[2] - bbox[0]
             x = (target_w - w) / 2
 
+            # Черная контрастная обводка
             for adj in [(-4,0), (4,0), (0,-4), (0,4), (-4,-4), (4,4), (-4,4), (4,-4)]:
                 draw.text((x + adj[0], y_text + adj[1]), line, font=font, fill="black")
 
@@ -223,11 +247,20 @@ def build_video(script_text):
     mask_clip = VideoClip(make_mask_frame, ismask=True, duration=total_duration)
     caption_clip = caption_clip.set_mask(mask_clip)
 
-    final_clip = CompositeVideoClip([bg_clip, caption_clip], size=(target_w, target_h))
-    final_clip = final_clip.set_audio(audio)
+    final_clip = CompositeVideoClip([bg_video, caption_clip], size=(target_w, target_h))
+
+    # Сведение дикторской озвучки и тихой фоновой музыки
+    audio_tracks = [voice_audio]
+    if os.path.exists("bgm.mp3"):
+        bgm_clip = AudioFileClip("bgm.mp3").set_duration(total_duration)
+        bgm_clip = volumex(bgm_clip, 0.12)  # Громкость музыки 12%
+        audio_tracks.append(bgm_clip)
+
+    final_audio = CompositeAudioClip(audio_tracks)
+    final_clip = final_clip.set_audio(final_audio)
     
     final_clip.write_videofile("final_short.mp4", fps=24, codec="libx264", audio_codec="aac")
-    audio.close()
+    voice_audio.close()
 
 def upload_to_youtube(metadata):
     from google.oauth2.credentials import Credentials
@@ -283,16 +316,18 @@ def upload_to_youtube(metadata):
     media = MediaFileUpload("final_short.mp4", mimetype="video/mp4", resumable=False)
     request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
     response = request.execute()
-    print(f"✅ ЧЕРНЫЙ СТОИЧЕСКИЙ РОЛИК ОПУБЛИКОВАН! ID: {response.get('id')}")
+    print(f"✅ ЧЕРНЫЙ СТОИЧЕСКИЙ РОЛИК С ВИДЕОФОНОМ И МУЗЫКОЙ ОПУБЛИКОВАН! ID: {response.get('id')}")
 
 if __name__ == "__main__":
     print("1. Генерируем циничный стоический мем...")
     data = get_script()
-    print("2. Озвучиваем глубоким голосом...")
+    print("2. Озвучиваем голосом...")
     asyncio.run(create_audio(data['text']))
-    print("3. Скачиваем атмосферный случайный визуал с Pexels...")
-    download_pexels_image(data['image_query'])
-    print("4. Собираем 9:16 видео с бегущими субтитрами...")
+    print("3. Скачиваем фоновую музыку...")
+    download_bgm()
+    print("4. Скачиваем атмосферный фоновый видеоклип с Pexels...")
+    download_pexels_video(data['video_query'])
+    print("5. Собираем 9:16 видео с динамичным фоном, музыкой и субтитрами...")
     build_video(data['text'])
-    print("5. Загружаем на YouTube...")
+    print("6. Загружаем на YouTube...")
     upload_to_youtube(data)
