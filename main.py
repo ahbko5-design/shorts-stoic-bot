@@ -133,7 +133,6 @@ def build_video(script_text):
     duration = audio.duration
     target_w, target_h = 1080, 1920
 
-    # Пропорциональный Crop-to-Fill в PIL (заполняем 9:16 без растяжения)
     img = Image.open("stoic_bg.jpg").convert("RGB")
     orig_w, orig_h = img.size
 
@@ -145,7 +144,6 @@ def build_video(script_text):
     top = (new_h - target_h) // 2
     bg_canvas = img_resized.crop((left, top, left + target_w, top + target_h))
 
-    # Наложение текста прямо на картинку через PIL
     draw = ImageDraw.Draw(bg_canvas)
     try:
         font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 54)
@@ -161,17 +159,14 @@ def build_video(script_text):
         w = bbox[2] - bbox[0]
         x = (target_w - w) / 2
 
-        # Чёрная контрастная обводка
         for adj in [(-4,0), (4,0), (0,-4), (0,4), (-4,-4), (4,4), (-4,4), (4,-4)]:
             draw.text((x + adj[0], y_text + adj[1]), line, font=font, fill="black")
 
-        # Белый философский текст
         draw.text((x, y_text), line, font=font, fill="white")
         y_text += line_height
 
     bg_canvas.save("final_frame.jpg")
 
-    # Сборка статичного видео без вызова устаревшего ресайза MoviePy
     img_clip = ImageClip("final_frame.jpg").set_duration(duration)
 
     final_clip = CompositeVideoClip([img_clip], size=(target_w, target_h))
@@ -182,8 +177,37 @@ def build_video(script_text):
 
 def upload_to_youtube(metadata):
     from google.oauth2.credentials import Credentials
-    
-    creds = Credentials.from_authorized_user_file('token.json', ["https://www.googleapis.com/auth/youtube.upload"])
+    from google.auth.transport.requests import Request
+
+    with open('token.json', 'r') as f:
+        token_data = json.load(f)
+
+    client_secret_env = os.getenv('CLIENT_SECRET_JSON', '')
+    client_id = None
+    client_secret = None
+
+    if client_secret_env:
+        try:
+            cs_data = json.loads(client_secret_env)
+            web_or_installed = cs_data.get('installed') or cs_data.get('web') or {}
+            client_id = web_or_installed.get('client_id')
+            client_secret = web_or_installed.get('client_secret')
+        except Exception as e:
+            print(f"⚠️ Ошибка парсинга CLIENT_SECRET_JSON: {e}")
+
+    creds = Credentials(
+        token=token_data.get('token'),
+        refresh_token=token_data.get('refresh_token'),
+        token_uri=token_data.get('token_uri', "https://oauth2.googleapis.com/token"),
+        client_id=client_id or token_data.get('client_id'),
+        client_secret=client_secret or token_data.get('client_secret'),
+        scopes=["https://www.googleapis.com/auth/youtube.upload"]
+    )
+
+    if creds.expired and creds.refresh_token:
+        print("🔄 Обновляем истёкший access token...")
+        creds.refresh(Request())
+
     youtube = googleapiclient.discovery.build("youtube", "v3", credentials=creds)
 
     description_text = (
