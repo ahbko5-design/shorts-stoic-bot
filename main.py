@@ -1,3 +1,8 @@
+from PIL import Image
+# Принудительный патч Pillow 10+ ДО импорта MoviePy
+if not hasattr(Image, 'ANTIALIAS'):
+    Image.ANTIALIAS = Image.Resampling.LANCZOS
+
 import os
 import re
 import json
@@ -9,7 +14,7 @@ import requests
 import numpy as np
 from google import genai
 import edge_tts
-from PIL import Image, ImageDraw, ImageFont
+from PIL import ImageDraw, ImageFont
 from moviepy.editor import ImageClip, AudioFileClip, VideoClip, CompositeVideoClip
 import google_auth_oauthlib.flow
 import googleapiclient.discovery
@@ -146,9 +151,8 @@ def build_video(script_text):
 
     prepare_vertical_background()
 
-    # 1. Анимированный фоновый клип (Zoom-In)
+    # 1. Фоновый статичный клип (без ресейза MoviePy)
     bg_clip = ImageClip("clean_bg.jpg").set_duration(total_duration)
-    bg_animated = bg_clip.resize(lambda t: 1 + 0.04 * (t / total_duration)).set_position(('center', 'center'))
 
     # 2. Бегущие субтитры (порциями по 3-4 слова)
     words = script_text.split()
@@ -219,7 +223,7 @@ def build_video(script_text):
     mask_clip = VideoClip(make_mask_frame, ismask=True, duration=total_duration)
     caption_clip = caption_clip.set_mask(mask_clip)
 
-    final_clip = CompositeVideoClip([bg_animated, caption_clip], size=(target_w, target_h))
+    final_clip = CompositeVideoClip([bg_clip, caption_clip], size=(target_w, target_h))
     final_clip = final_clip.set_audio(audio)
     
     final_clip.write_videofile("final_short.mp4", fps=24, codec="libx264", audio_codec="aac")
@@ -288,7 +292,7 @@ if __name__ == "__main__":
     asyncio.run(create_audio(data['text']))
     print("3. Скачиваем атмосферный случайный визуал с Pexels...")
     download_pexels_image(data['image_query'])
-    print("4. Собираем 9:16 видео с бегущими субтитрами и Zoom-эффектом...")
+    print("4. Собираем 9:16 видео с бегущими субтитрами...")
     build_video(data['text'])
     print("5. Загружаем на YouTube...")
     upload_to_youtube(data)
