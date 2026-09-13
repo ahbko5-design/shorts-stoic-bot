@@ -2,19 +2,19 @@ name: Daily YouTube Shorts Auto-Publisher
 
 on:
   schedule:
-    # Запуск каждый день в 12:00 UTC (15:00 по Киеву)
-    - cron: '0 12 * * *'
-  workflow_dispatch: # Позволяет запускать руками для теста
+    # Запуск 2 раза в день (06:00 и 15:00 UTC = 09:00 и 18:00 по Киеву)
+    - cron: '0 6,15 * * *'
+  workflow_dispatch: # Сохраняет возможность запуска вручную через синюю кнопку
 
 jobs:
   build-and-upload:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
