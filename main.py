@@ -6,17 +6,14 @@ import random
 import asyncio
 import textwrap
 import requests
+import numpy as np
 from google import genai
 import edge_tts
 from PIL import Image, ImageDraw, ImageFont
-from moviepy.editor import ImageClip, AudioFileClip, CompositeVideoClip
+from moviepy.editor import ImageClip, AudioFileClip, VideoClip, CompositeVideoClip
 import google_auth_oauthlib.flow
 import googleapiclient.discovery
 from googleapiclient.http import MediaFileUpload
-
-# Совместимость Pillow 10+ со старыми вызовами MoviePy
-if not hasattr(Image, 'ANTIALIAS'):
-    Image.ANTIALIAS = Image.Resampling.LANCZOS
 
 # Восстановление секретов
 if not os.path.exists('client_secret.json'):
@@ -43,7 +40,7 @@ DARK_STOIC_TOPICS = [
 
 FALLBACK_SCRIPTS = [
     {
-        "text": "You are stressing about a text message while standing on a giant rock spinning through a void. Marcus Aurelius is laughing at you. Memento mori, human.",
+        "text": "You are stressing about a text message while standing on a giant rock spinning through a void. Marcus Aurelius is laughing at you. Memento mori.",
         "image_query": "marcus aurelius statue dark",
         "title": "Stoic Reality Check 🏛️💀 #shorts #stoicism #darkhumor #philosophy",
         "tags": ["Stoicism", "DarkHumor", "Philosophy", "Wisdom", "Shorts"]
@@ -67,7 +64,7 @@ def get_script():
     
     Voiceover guidelines:
     - Deep, sarcastic, brutally realistic, philosophical.
-    - END WITH: "Subscribe for your daily dose of brutal Stoic reality."
+    - DO NOT include any calls to action, sub requests, or subscribe prompts. End with a strong punchline.
     
     Return ONLY a JSON object:
     {{
@@ -126,13 +123,10 @@ def download_pexels_image(query):
     
     with open("stoic_bg.jpg", "wb") as f:
         f.write(requests.get(image_url).content)
-    print("📸 Атмосферный фоновый визуал скачан!")
+    print("📸 Фоновое изображение скачано!")
 
-def build_video(script_text):
-    audio = AudioFileClip("audio.mp3")
-    duration = audio.duration
+def prepare_vertical_background():
     target_w, target_h = 1080, 1920
-
     img = Image.open("stoic_bg.jpg").convert("RGB")
     orig_w, orig_h = img.size
 
@@ -142,34 +136,90 @@ def build_video(script_text):
 
     left = (new_w - target_w) // 2
     top = (new_h - target_h) // 2
-    bg_canvas = img_resized.crop((left, top, left + target_w, top + target_h))
+    cropped_img = img_resized.crop((left, top, left + target_w, top + target_h))
+    cropped_img.save("clean_bg.jpg")
 
-    draw = ImageDraw.Draw(bg_canvas)
+def build_video(script_text):
+    audio = AudioFileClip("audio.mp3")
+    total_duration = audio.duration
+    target_w, target_h = 1080, 1920
+
+    prepare_vertical_background()
+
+    # 1. Анимированный фоновый клип (Zoom-In)
+    bg_clip = ImageClip("clean_bg.jpg").set_duration(total_duration)
+    bg_animated = bg_clip.resize(lambda t: 1 + 0.04 * (t / total_duration)).set_position(('center', 'center'))
+
+    # 2. Бегущие субтитры (порциями по 3-4 слова)
+    words = script_text.split()
+    chunks = []
+    current_chunk = []
+    for word in words:
+        current_chunk.append(word)
+        if len(current_chunk) >= 4:
+            chunks.append(" ".join(current_chunk))
+            current_chunk = []
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
+
+    chunk_duration = total_duration / max(len(chunks), 1)
+
     try:
         font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 54)
     except:
         font = ImageFont.load_default()
 
-    wrapped_lines = textwrap.wrap(script_text, width=22)
-    line_height = 75
-    y_text = int(target_h * 0.32)
+    def make_caption_frame(t):
+        chunk_idx = min(int(t / chunk_duration), len(chunks) - 1)
+        current_text = chunks[chunk_idx]
 
-    for line in wrapped_lines:
-        bbox = draw.textbbox((0, 0), line, font=font)
-        w = bbox[2] - bbox[0]
-        x = (target_w - w) / 2
+        txt_image = Image.new("RGB", (target_w, target_h), (0, 0, 0))
+        draw = ImageDraw.Draw(txt_image)
 
-        for adj in [(-4,0), (4,0), (0,-4), (0,4), (-4,-4), (4,4), (-4,4), (4,-4)]:
-            draw.text((x + adj[0], y_text + adj[1]), line, font=font, fill="black")
+        wrapped = textwrap.wrap(current_text, width=20)
+        y_text = int(target_h * 0.35)
 
-        draw.text((x, y_text), line, font=font, fill="white")
-        y_text += line_height
+        for line in wrapped:
+            bbox = draw.textbbox((0, 0), line, font=font)
+            w = bbox[2] - bbox[0]
+            x = (target_w - w) / 2
 
-    bg_canvas.save("final_frame.jpg")
+            for adj in [(-4,0), (4,0), (0,-4), (0,4), (-4,-4), (4,4), (-4,4), (4,-4)]:
+                draw.text((x + adj[0], y_text + adj[1]), line, font=font, fill="black")
 
-    img_clip = ImageClip("final_frame.jpg").set_duration(duration)
+            draw.text((x, y_text), line, font=font, fill="white")
+            y_text += 70
 
-    final_clip = CompositeVideoClip([img_clip], size=(target_w, target_h))
+        return np.array(txt_image)
+
+    def make_mask_frame(t):
+        chunk_idx = min(int(t / chunk_duration), len(chunks) - 1)
+        current_text = chunks[chunk_idx]
+
+        mask_image = Image.new("L", (target_w, target_h), 0)
+        draw = ImageDraw.Draw(mask_image)
+
+        wrapped = textwrap.wrap(current_text, width=20)
+        y_text = int(target_h * 0.35)
+
+        for line in wrapped:
+            bbox = draw.textbbox((0, 0), line, font=font)
+            w = bbox[2] - bbox[0]
+            x = (target_w - w) / 2
+
+            for adj in [(-4,0), (4,0), (0,-4), (0,4), (-4,-4), (4,4), (-4,4), (4,-4)]:
+                draw.text((x + adj[0], y_text + adj[1]), line, font=font, fill=255)
+
+            draw.text((x, y_text), line, font=font, fill=255)
+            y_text += 70
+
+        return np.array(mask_image) / 255.0
+
+    caption_clip = VideoClip(make_caption_frame, duration=total_duration)
+    mask_clip = VideoClip(make_mask_frame, ismask=True, duration=total_duration)
+    caption_clip = caption_clip.set_mask(mask_clip)
+
+    final_clip = CompositeVideoClip([bg_animated, caption_clip], size=(target_w, target_h))
     final_clip = final_clip.set_audio(audio)
     
     final_clip.write_videofile("final_short.mp4", fps=24, codec="libx264", audio_codec="aac")
@@ -212,8 +262,7 @@ def upload_to_youtube(metadata):
 
     description_text = (
         f"{metadata['text']}\n\n"
-        f"🏛️ Brutal Stoic wisdom & dark humor for modern humans.\n"
-        f"🔔 Subscribe for your daily dose of Stoic reality!\n\n"
+        f"🏛️ Brutal Stoic wisdom & dark humor for modern humans.\n\n"
         f"#shorts #stoicism #darkhumor #philosophy #wisdom"
     )
 
@@ -239,7 +288,7 @@ if __name__ == "__main__":
     asyncio.run(create_audio(data['text']))
     print("3. Скачиваем атмосферный случайный визуал с Pexels...")
     download_pexels_image(data['image_query'])
-    print("4. Собираем 9:16 видео с субтитрами...")
+    print("4. Собираем 9:16 видео с бегущими субтитрами и Zoom-эффектом...")
     build_video(data['text'])
     print("5. Загружаем на YouTube...")
     upload_to_youtube(data)
