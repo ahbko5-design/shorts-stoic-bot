@@ -33,9 +33,9 @@ PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
 
 # Атмосферные фоновые треки (Royalty-Free)
 DARK_STOIC_BGM = [
-    "https://cdn.pixabay.com/download/audio/2022/10/25/audio_88c4d6fdf5.mp3", # Dark ambient
-    "https://cdn.pixabay.com/download/audio/2022/03/15/audio_c8c8a73467.mp3", # Mysterious mood
-    "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3"  # Deep cinematic
+    "https://cdn.pixabay.com/download/audio/2022/10/25/audio_88c4d6fdf5.mp3",
+    "https://cdn.pixabay.com/download/audio/2022/03/15/audio_c8c8a73467.mp3",
+    "https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3"
 ]
 
 DARK_STOIC_TOPICS = [
@@ -113,15 +113,25 @@ async def create_audio(text):
 def download_bgm():
     bgm_url = random.choice(DARK_STOIC_BGM)
     try:
-        res = requests.get(bgm_url, timeout=10)
-        with open("bgm.mp3", "wb") as f:
-            f.write(res.content)
-        print("🎵 Фоновая музыка успешно скачана!")
+        # Притворяемся браузером, чтобы обойти защиту Cloudflare на Pixabay
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
+        }
+        res = requests.get(bgm_url, headers=headers, timeout=10)
+        
+        # Строгая проверка: убеждаемся, что скачался аудиофайл, а не HTML-страница
+        if res.status_code == 200 and 'audio' in res.headers.get('Content-Type', '').lower():
+            with open("bgm.mp3", "wb") as f:
+                f.write(res.content)
+            print("🎵 Фоновая музыка успешно скачана!")
+        else:
+            print(f"⚠️ Pixabay не отдал музыку (код {res.status_code}). Видео соберётся без фонового трека.")
+            if os.path.exists("bgm.mp3"):
+                os.remove("bgm.mp3") # Удаляем мусорный файл, чтобы MoviePy не упал
     except Exception as e:
-        print(f"⚠️ Не удалось скачать музыку: {e}")
+        print(f"⚠️ Ошибка при скачивании музыки: {e}")
 
 def download_pexels_video(query):
-    """ Поиск и скачивание случайного фонового видео по теме с Pexels """
     headers = {"Authorization": PEXELS_API_KEY}
     random_page = random.randint(1, 8)
     url = f"https://api.pexels.com/videos/search?query={query}&per_page=12&page={random_page}&orientation=portrait"
@@ -142,7 +152,6 @@ def download_pexels_video(query):
     selected_video = random.choice(videos)
     video_files = selected_video.get("video_files", [])
     
-    # Подбираем лучшее вертикальное видео по разрешению
     hd_file = next((f for f in video_files if f.get("width") == 1080 and f.get("height") == 1920), None)
     if not hd_file:
         hd_file = max(video_files, key=lambda x: x.get("width", 0))
@@ -157,18 +166,14 @@ def build_video(script_text):
     total_duration = voice_audio.duration
     target_w, target_h = 1080, 1920
 
-    # Обработка видео: обрезка по длине голоса и кадрирование под 9:16
     raw_video = VideoFileClip("stoic_bg.mp4").without_audio()
     if raw_video.duration < total_duration:
-        # Если видео короче речи — зацикливаем
         raw_video = raw_video.loop(duration=total_duration)
     else:
-        # Берём случайный отрезок из видео
         max_start = max(0, raw_video.duration - total_duration)
         start_t = random.uniform(0, max_start)
         raw_video = raw_video.subclip(start_t, start_t + total_duration)
 
-    # Приводим к 1080x1920 без искажения пропорций
     vw, vh = raw_video.size
     scale = max(target_w / vw, target_h / vh)
     new_w, new_h = int(vw * scale), int(vh * scale)
@@ -177,7 +182,6 @@ def build_video(script_text):
         x_center=new_w // 2, y_center=new_h // 2, width=target_w, height=target_h
     )
 
-    # Генерация бегущих субтитров (порциями по 3-4 слова)
     words = script_text.split()
     chunks = []
     current_chunk = []
@@ -211,7 +215,6 @@ def build_video(script_text):
             w = bbox[2] - bbox[0]
             x = (target_w - w) / 2
 
-            # Черная контрастная обводка
             for adj in [(-4,0), (4,0), (0,-4), (0,4), (-4,-4), (4,4), (-4,4), (4,-4)]:
                 draw.text((x + adj[0], y_text + adj[1]), line, font=font, fill="black")
 
@@ -249,12 +252,15 @@ def build_video(script_text):
 
     final_clip = CompositeVideoClip([bg_video, caption_clip], size=(target_w, target_h))
 
-    # Сведение дикторской озвучки и тихой фоновой музыки
     audio_tracks = [voice_audio]
+    # Накладываем музыку только если файл скачался и он валидный
     if os.path.exists("bgm.mp3"):
-        bgm_clip = AudioFileClip("bgm.mp3").set_duration(total_duration)
-        bgm_clip = volumex(bgm_clip, 0.12)  # Громкость музыки 12%
-        audio_tracks.append(bgm_clip)
+        try:
+            bgm_clip = AudioFileClip("bgm.mp3").set_duration(total_duration)
+            bgm_clip = volumex(bgm_clip, 0.12)
+            audio_tracks.append(bgm_clip)
+        except Exception as e:
+            print(f"⚠️ Файл bgm.mp3 оказался поврежден, пропускаем музыку: {e}")
 
     final_audio = CompositeAudioClip(audio_tracks)
     final_clip = final_clip.set_audio(final_audio)
@@ -280,7 +286,7 @@ def upload_to_youtube(metadata):
             client_id = web_or_installed.get('client_id')
             client_secret = web_or_installed.get('client_secret')
         except Exception as e:
-            print(f"⚠️ Ошибка парсинга CLIENT_SECRET_JSON: {e}")
+            pass
 
     creds = Credentials(
         token=token_data.get('token'),
