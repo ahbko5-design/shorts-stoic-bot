@@ -27,6 +27,7 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          
           CLIENT_SECRET_JSON: ${{ secrets.CLIENT_SECRET_JSON }}
           YOUTUBE_TOKEN: ${{ secrets.YOUTUBE_TOKEN }}
         run: python main.py
