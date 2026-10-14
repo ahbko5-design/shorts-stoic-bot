@@ -1,6 +1,6 @@
 google-genai
 requests
-edge-tts
+gTTS
 moviepy==1.0.3
 google-api-python-client
 google-auth-oauthlib
