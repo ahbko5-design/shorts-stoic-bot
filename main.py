@@ -106,7 +106,6 @@ def get_script():
     return random.choice(FALLBACK_SCRIPTS)
 
 def create_audio(text):
-    # Используем gTTS вместо заблокированного edge-tts
     tts = gTTS(text=text, lang='en', slow=False)
     tts.save("voice.mp3")
     print("🎙️ Озвучка через Google успешно создана!")
@@ -334,3 +333,4 @@ if __name__ == "__main__":
     print("5. Собираем 9:16 видео с динамичным фоном, музыкой и субтитрами...")
     build_video(data['text'])
     print("6. Загружаем на YouTube...")
+    upload_to_youtube(data)
