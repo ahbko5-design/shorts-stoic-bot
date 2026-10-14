@@ -7,12 +7,11 @@ import re
 import json
 import time
 import random
-import asyncio
 import textwrap
 import requests
 import numpy as np
 from google import genai
-import edge_tts
+from gtts import gTTS
 from PIL import ImageDraw, ImageFont
 from moviepy.editor import VideoFileClip, AudioFileClip, VideoClip, CompositeVideoClip, CompositeAudioClip
 from moviepy.audio.fx.all import volumex
@@ -106,20 +105,20 @@ def get_script():
     print("⚠️ Квота Gemini исчерпана. Берем резервный сценарий...")
     return random.choice(FALLBACK_SCRIPTS)
 
-async def create_audio(text):
-    communicate = edge_tts.Communicate(text, "en-US-ChristopherNeural", rate="-5%", pitch="-3Hz")
-    await communicate.save("voice.mp3")
+def create_audio(text):
+    # Используем gTTS вместо заблокированного edge-tts
+    tts = gTTS(text=text, lang='en', slow=False)
+    tts.save("voice.mp3")
+    print("🎙️ Озвучка через Google успешно создана!")
 
 def download_bgm():
     bgm_url = random.choice(DARK_STOIC_BGM)
     try:
-        # Притворяемся браузером, чтобы обойти защиту Cloudflare на Pixabay
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
         }
         res = requests.get(bgm_url, headers=headers, timeout=10)
         
-        # Строгая проверка: убеждаемся, что скачался аудиофайл, а не HTML-страница
         if res.status_code == 200 and 'audio' in res.headers.get('Content-Type', '').lower():
             with open("bgm.mp3", "wb") as f:
                 f.write(res.content)
@@ -127,7 +126,7 @@ def download_bgm():
         else:
             print(f"⚠️ Pixabay не отдал музыку (код {res.status_code}). Видео соберётся без фонового трека.")
             if os.path.exists("bgm.mp3"):
-                os.remove("bgm.mp3") # Удаляем мусорный файл, чтобы MoviePy не упал
+                os.remove("bgm.mp3")
     except Exception as e:
         print(f"⚠️ Ошибка при скачивании музыки: {e}")
 
@@ -253,7 +252,6 @@ def build_video(script_text):
     final_clip = CompositeVideoClip([bg_video, caption_clip], size=(target_w, target_h))
 
     audio_tracks = [voice_audio]
-    # Накладываем музыку только если файл скачался и он валидный
     if os.path.exists("bgm.mp3"):
         try:
             bgm_clip = AudioFileClip("bgm.mp3").set_duration(total_duration)
@@ -322,13 +320,13 @@ def upload_to_youtube(metadata):
     media = MediaFileUpload("final_short.mp4", mimetype="video/mp4", resumable=False)
     request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
     response = request.execute()
-    print(f"✅ ЧЕРНЫЙ СТОИЧЕСКИЙ РОЛИК С ВИДЕОФОНОМ И МУЗЫКОЙ ОПУБЛИКОВАН! ID: {response.get('id')}")
+    print(f"✅ ЧЕРНЫЙ СТОИЧЕСКИЙ РОЛИК С ВИДЕОФОНОМ И ОЗВУЧКОЙ ОПУБЛИКОВАН! ID: {response.get('id')}")
 
 if __name__ == "__main__":
     print("1. Генерируем циничный стоический мем...")
     data = get_script()
-    print("2. Озвучиваем голосом...")
-    asyncio.run(create_audio(data['text']))
+    print("2. Озвучиваем голосом (gTTS)...")
+    create_audio(data['text'])
     print("3. Скачиваем фоновую музыку...")
     download_bgm()
     print("4. Скачиваем атмосферный фоновый видеоклип с Pexels...")
@@ -336,4 +334,3 @@ if __name__ == "__main__":
     print("5. Собираем 9:16 видео с динамичным фоном, музыкой и субтитрами...")
     build_video(data['text'])
     print("6. Загружаем на YouTube...")
-    upload_to_youtube(data)
