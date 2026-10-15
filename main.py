@@ -14,7 +14,7 @@ from google import genai
 from gtts import gTTS
 from PIL import ImageDraw, ImageFont
 from moviepy.editor import VideoFileClip, AudioFileClip, VideoClip, CompositeVideoClip, CompositeAudioClip
-from moviepy.audio.fx.all import volumex
+from moviepy.audio.fx.all import volumex, speedx
 import googleapiclient.discovery
 from googleapiclient.http import MediaFileUpload
 
@@ -106,9 +106,16 @@ def get_script():
     return random.choice(FALLBACK_SCRIPTS)
 
 def create_audio(text):
+    # Генерируем стабильно через Google без банов 403
     tts = gTTS(text=text, lang='en', slow=False)
-    tts.save("voice.mp3")
-    print("🎙️ Озвучка через Google успешно создана!")
+    tts.save("voice_raw.mp3")
+    
+    # С помощью MoviePy слегка замедляем и понижаем голос, превращая его в плотный мужской баритон
+    clip = AudioFileClip("voice_raw.mp3")
+    # Коэффициент 0.9 делает голос ниже, брутальнее и кинематографичнее
+    deep_clip = clip.fx(speedx, 0.9) 
+    deep_clip.write_audiofile("voice.mp3", fps=44100, logger=None)
+    print("🎙️ Стабильная озвучка с мужским баритоном успешно создана!")
 
 def download_bgm():
     bgm_url = random.choice(DARK_STOIC_BGM)
@@ -319,12 +326,12 @@ def upload_to_youtube(metadata):
     media = MediaFileUpload("final_short.mp4", mimetype="video/mp4", resumable=False)
     request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
     response = request.execute()
-    print(f"✅ ЧЕРНЫЙ СТОИЧЕСКИЙ РОЛИК С ВИДЕОФОНОМ И ОЗВУЧКОЙ ОПУБЛИКОВАН! ID: {response.get('id')}")
+    print(f"✅ ЧЕРНЫЙ СТОИЧЕСКИЙ РОЛИК ОПУБЛИКОВАН! ID: {response.get('id')}")
 
 if __name__ == "__main__":
     print("1. Генерируем циничный стоический мем...")
     data = get_script()
-    print("2. Озвучиваем голосом (gTTS)...")
+    print("2. Озвучиваем с эффектом глубокого мужского голоса...")
     create_audio(data['text'])
     print("3. Скачиваем фоновую музыку...")
     download_bgm()
